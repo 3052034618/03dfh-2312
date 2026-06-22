@@ -1,9 +1,9 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Save, Camera, Zap, Calendar, User, Shield, Plus, ChevronRight } from 'lucide-react'
+import { ArrowLeft, Save, Camera, Zap, Calendar, User, Shield, Plus, Trash2, ImageIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAppStore } from '@/store/useAppStore'
-import type { SkinAssessment, TreatmentPlan, TreatmentSession } from '@/types'
+import type { SkinAssessment, TreatmentPlan, TreatmentSession, SkinPhoto } from '@/types'
 
 const skinQualityOptions = [
   { value: 'dry' as const, label: '干性' },
@@ -115,6 +115,16 @@ export default function CustomerDetail() {
     existingPlan?.contraindications ?? []
   )
   const [doctorId, setDoctorId] = useState(existingPlan?.doctorId ?? '')
+  const [photos, setPhotos] = useState<SkinPhoto[]>(existingAssessment?.photos ?? [])
+
+  const fileInputRefs = useRef<Record<SkinPhoto['area'], HTMLInputElement | null>>({
+    forehead: null,
+    left_cheek: null,
+    right_cheek: null,
+    nose: null,
+    chin: null,
+    full_face: null,
+  })
 
   if (!customer) {
     return (
@@ -162,9 +172,28 @@ export default function CustomerDetail() {
     ])
   }
 
+  function handlePhotoUpload(area: SkinPhoto['area'], file: File) {
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      const url = e.target?.result as string
+      const newPhoto: SkinPhoto = {
+        id: `photo_${area}_${Date.now()}`,
+        area,
+        url,
+        takenAt: new Date().toISOString(),
+      }
+      setPhotos((prev) => [...prev.filter((p) => p.area !== area), newPhoto])
+    }
+    reader.readAsDataURL(file)
+  }
+
+  function handlePhotoDelete(photoId: string) {
+    setPhotos((prev) => prev.filter((p) => p.id !== photoId))
+  }
+
   function handleSaveAssessment() {
     if (existingAssessment) {
-      updateAssessment(existingAssessment.id, { skinQuality, spots, redness, acneMarks, notes })
+      updateAssessment(existingAssessment.id, { skinQuality, spots, redness, acneMarks, photos, notes })
     } else {
       addAssessment({
         id: `a_${Date.now()}`,
@@ -173,7 +202,7 @@ export default function CustomerDetail() {
         spots,
         redness,
         acneMarks,
-        photos: [],
+        photos,
         notes,
         createdAt: new Date().toISOString().split('T')[0],
       })
@@ -278,15 +307,59 @@ export default function CustomerDetail() {
               面诊照片
             </h3>
             <div className="grid grid-cols-3 gap-3">
-              {photoAreas.map((area) => (
-                <div
-                  key={area.value}
-                  className="flex flex-col items-center justify-center h-24 rounded-lg border-2 border-dashed border-slate-200 bg-slate-50 hover:border-primary-300 hover:bg-primary-50/30 transition-colors cursor-pointer"
-                >
-                  <Camera className="w-5 h-5 text-slate-400 mb-1" />
-                  <span className="text-xs text-slate-500">{area.label}</span>
-                </div>
-              ))}
+              {photoAreas.map((area) => {
+                const photo = photos.find((p) => p.area === area.value)
+                return (
+                  <div key={area.value} className="relative">
+                    {photo ? (
+                      <div className="relative h-24 rounded-lg overflow-hidden">
+                        <img
+                          src={photo.url}
+                          alt={area.label}
+                          className="w-full h-full object-cover"
+                        />
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handlePhotoDelete(photo.id)
+                          }}
+                          className="absolute top-1 right-1 p-1 rounded-full bg-white/90 hover:bg-red-50 text-slate-600 hover:text-red-600 shadow-sm transition-colors"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                        <div className="absolute bottom-0 left-0 right-0 p-1 bg-gradient-to-t from-black/60 to-transparent">
+                          <span className="text-xs text-white font-medium">{area.label}</span>
+                        </div>
+                      </div>
+                    ) : (
+                      <div
+                        onClick={() => fileInputRefs.current[area.value]?.click()}
+                        className="flex flex-col items-center justify-center h-24 rounded-lg border-2 border-dashed border-slate-200 bg-slate-50 hover:border-primary-300 hover:bg-primary-50/30 transition-colors cursor-pointer"
+                      >
+                        <ImageIcon className="w-5 h-5 text-slate-400 mb-1" />
+                        <span className="text-xs text-slate-500">{area.label}</span>
+                        <span className="text-xs text-slate-400 mt-0.5">点击上传</span>
+                      </div>
+                    )}
+                    <input
+                      type="file"
+                      ref={(el) => {
+                        fileInputRefs.current[area.value] = el
+                      }}
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0]
+                        if (file) {
+                          handlePhotoUpload(area.value, file)
+                        }
+                        e.target.value = ''
+                      }}
+                    />
+                  </div>
+                )
+              })}
             </div>
           </div>
 

@@ -6,10 +6,12 @@ import {
   Snowflake,
   ChevronRight,
   ArrowLeft,
+  X,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAppStore } from '@/store/useAppStore'
 import type { Appointment } from '@/types'
+import { addDays, format } from 'date-fns'
 
 type FilterTab = 'all' | 'pending' | 'completed'
 type ViewMode = 'list' | 'execution'
@@ -45,6 +47,10 @@ const statusConfig: Record<
   cancelled: {
     label: '已取消',
     className: 'bg-slate-50 text-slate-500 border border-slate-200',
+  },
+  late: {
+    label: '迟到',
+    className: 'bg-amber-50 text-amber-700 border border-amber-200',
   },
 }
 
@@ -85,6 +91,7 @@ export default function TreatmentList() {
     equipment,
     addRecord,
     updateAppointment,
+    addFollowUp,
   } = useAppStore()
 
   const [activeTab, setActiveTab] = useState<FilterTab>('all')
@@ -100,6 +107,7 @@ export default function TreatmentList() {
   const [careAdvice, setCareAdvice] = useState('')
   const [isAbnormal, setIsAbnormal] = useState(false)
   const [abnormalNote, setAbnormalNote] = useState('')
+  const [showSuccessToast, setShowSuccessToast] = useState(false)
 
   const getCustomerName = (id: string) =>
     customers.find((c) => c.id === id)?.name ?? ''
@@ -174,10 +182,16 @@ export default function TreatmentList() {
 
   const handleSubmit = () => {
     if (!selectedAppointment) return
+    const appointment = selectedAppointment
+    const recordedAt = new Date().toISOString().slice(0, 16).replace('T', ' ')
+    const treatmentDateStr = recordedAt.split(' ')[0]
+    const treatmentDate = new Date(treatmentDateStr)
+    const timestamp = Date.now()
+
     addRecord({
-      id: `tr${Date.now()}`,
-      appointmentId: selectedAppointment.id,
-      customerId: selectedAppointment.customerId,
+      id: `tr${timestamp}`,
+      appointmentId: appointment.id,
+      customerId: appointment.customerId,
       preCheck: {
         consentConfirmed,
         precautionsConfirmed,
@@ -190,9 +204,25 @@ export default function TreatmentList() {
         isAbnormal,
         ...(isAbnormal && abnormalNote ? { abnormalNote } : {}),
       },
-      recordedAt: new Date().toISOString().slice(0, 16).replace('T', ' '),
+      recordedAt,
     })
-    updateAppointment(selectedAppointment.id, { status: 'completed' })
+
+    const triggerDays: (3 | 7 | 14)[] = [3, 7, 14]
+    triggerDays.forEach((triggerDay) => {
+      const dueDate = format(addDays(treatmentDate, triggerDay), 'yyyy-MM-dd')
+      addFollowUp({
+        id: `fu_${appointment.id}_${triggerDay}_${timestamp}`,
+        customerId: appointment.customerId,
+        appointmentId: appointment.id,
+        triggerDay,
+        dueDate,
+        status: 'pending',
+      })
+    })
+
+    updateAppointment(appointment.id, { status: 'completed' })
+    setShowSuccessToast(true)
+    setTimeout(() => setShowSuccessToast(false), 3000)
     handleBackToList()
   }
 
@@ -470,12 +500,27 @@ export default function TreatmentList() {
   }
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="font-serif-title text-2xl font-semibold text-slate-800">
-          治疗记录
-        </h1>
-      </div>
+    <>
+      {showSuccessToast && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50">
+          <div className="bg-green-600 text-white px-5 py-3 rounded-lg shadow-lg flex items-center gap-3 animate-fade-in">
+            <CheckCircle className="w-5 h-5" />
+            <span className="text-sm font-medium">治疗记录已提交，已自动生成3条回访任务</span>
+            <button
+              onClick={() => setShowSuccessToast(false)}
+              className="ml-2 p-0.5 hover:bg-white/20 rounded transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+      <div className="p-6 space-y-6">
+        <div className="flex items-center justify-between">
+          <h1 className="font-serif-title text-2xl font-semibold text-slate-800">
+            治疗记录
+          </h1>
+        </div>
 
       <div className="flex items-center gap-2">
         {(
@@ -544,6 +589,11 @@ export default function TreatmentList() {
                       第{appt.sessionNumber}次
                     </span>
                   </div>
+                  {appt.changeReason && (appt.status === 'late' || appt.status === 'no_show' || appt.status === 'rescheduled' || appt.status === 'cancelled') && (
+                    <div className="mt-2 text-xs text-slate-500 bg-slate-50 rounded px-2 py-1">
+                      状态变更: {status.label} 原因: {appt.changeReason}
+                    </div>
+                  )}
                 </div>
                 <div className="flex items-center gap-3 ml-4">
                   {isScheduled && (
@@ -573,6 +623,7 @@ export default function TreatmentList() {
           <p className="text-sm">暂无匹配的治疗记录</p>
         </div>
       )}
-    </div>
+      </div>
+    </>
   )
 }

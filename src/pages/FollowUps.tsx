@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { PhoneOutgoing, Star, Clock, CheckCircle, AlertTriangle } from 'lucide-react'
+import { PhoneOutgoing, Star, Clock, CheckCircle, AlertTriangle, Filter } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAppStore } from '@/store/useAppStore'
 import type { FollowUpTask, Customer } from '@/types'
@@ -45,11 +45,13 @@ function getTodayStr() {
 }
 
 export default function FollowUps() {
-  const { followUps, customers, updateFollowUp } = useAppStore()
+  const { followUps, customers, appointments, updateFollowUp } = useAppStore()
 
   const [activeTab, setActiveTab] = useState<FilterTab>('all')
   const [showModal, setShowModal] = useState(false)
   const [selectedTask, setSelectedTask] = useState<FollowUpTask | null>(null)
+  const [filterCustomerId, setFilterCustomerId] = useState<string>('all')
+  const [filterSessionNumber, setFilterSessionNumber] = useState<string>('all')
 
   const [feedback, setFeedback] = useState('')
   const [satisfaction, setSatisfaction] = useState<1 | 2 | 3 | 4 | 5>(3)
@@ -59,12 +61,19 @@ export default function FollowUps() {
 
   const getCustomer = (id: string): Customer | undefined => customers.find((c) => c.id === id)
 
+  const getAppointment = (id: string) => appointments.find((a) => a.id === id)
+
   const filteredTasks = useMemo(() => {
     return followUps.filter((f) => {
-      if (activeTab === 'all') return true
-      return f.status === activeTab
+      if (activeTab !== 'all' && f.status !== activeTab) return false
+      if (filterCustomerId !== 'all' && f.customerId !== filterCustomerId) return false
+      if (filterSessionNumber !== 'all') {
+        const appt = getAppointment(f.appointmentId)
+        if (appt?.sessionNumber !== Number(filterSessionNumber)) return false
+      }
+      return true
     })
-  }, [followUps, activeTab])
+  }, [followUps, activeTab, filterCustomerId, filterSessionNumber, appointments])
 
   const tabCounts = useMemo(() => {
     const counts: Record<FilterTab, number> = { all: 0, pending: 0, completed: 0, overdue: 0 }
@@ -142,6 +151,33 @@ export default function FollowUps() {
         ))}
       </div>
 
+      <div className="flex items-center gap-3 px-6 py-3 border-b border-slate-100">
+        <div className="flex items-center gap-2 text-slate-500">
+          <Filter className="w-4 h-4" />
+          <span className="text-xs font-medium">筛选</span>
+        </div>
+        <select
+          value={filterCustomerId}
+          onChange={(e) => setFilterCustomerId(e.target.value)}
+          className="px-3 py-1.5 text-sm border border-slate-200 rounded-lg bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-300"
+        >
+          <option value="all">全部客户</option>
+          {customers.map((c) => (
+            <option key={c.id} value={c.id}>{c.name}</option>
+          ))}
+        </select>
+        <select
+          value={filterSessionNumber}
+          onChange={(e) => setFilterSessionNumber(e.target.value)}
+          className="px-3 py-1.5 text-sm border border-slate-200 rounded-lg bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-300"
+        >
+          <option value="all">全部疗程</option>
+          {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => (
+            <option key={n} value={n}>第{n}次</option>
+          ))}
+        </select>
+      </div>
+
       <div className="flex-1 overflow-auto p-6">
         {filteredTasks.length === 0 ? (
           <div className="py-20 text-center text-sm text-slate-400">暂无回访任务</div>
@@ -149,6 +185,7 @@ export default function FollowUps() {
           <div className="space-y-3">
             {filteredTasks.map((task) => {
               const customer = getCustomer(task.customerId)
+              const appt = getAppointment(task.appointmentId)
               const triggerBadge = getTriggerBadge(task.triggerDay)
               const statusBadge = getStatusBadge(task.status)
               const StatusIcon = statusBadge.icon
@@ -163,6 +200,11 @@ export default function FollowUps() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-sm font-medium text-slate-800">{customer?.name ?? '—'}</span>
+                        {appt && (
+                          <span className="text-[11px] text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
+                            第{appt.sessionNumber}次
+                          </span>
+                        )}
                         <span className={cn('text-[11px] font-medium px-2 py-0.5 rounded-full', triggerBadge.className)}>
                           {triggerBadge.text}
                         </span>

@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { persist, createJSONStorage } from 'zustand/middleware'
 import type { Customer, SkinAssessment, TreatmentPlan, Appointment, TreatmentRecord, FollowUpTask, Doctor, Room, Equipment } from '@/types'
 import { mockCustomers, mockAssessments, mockTreatmentPlans, mockAppointments, mockRecords, mockFollowUps, mockDoctors, mockRooms, mockEquipment } from '@/utils/mockData'
 
@@ -30,34 +31,61 @@ interface AppState {
 
   addFollowUp: (task: FollowUpTask) => void
   updateFollowUp: (id: string, data: Partial<FollowUpTask>) => void
+
+  resetAllData: () => void
 }
 
-export const useAppStore = create<AppState>((set) => ({
-  customers: mockCustomers,
-  assessments: mockAssessments,
-  treatmentPlans: mockTreatmentPlans,
-  appointments: mockAppointments,
-  records: mockRecords,
-  followUps: mockFollowUps,
-  doctors: mockDoctors,
-  rooms: mockRooms,
-  equipment: mockEquipment,
+export const useAppStore = create<AppState>()(
+  persist(
+    (set) => ({
+      customers: mockCustomers,
+      assessments: mockAssessments,
+      treatmentPlans: mockTreatmentPlans,
+      appointments: mockAppointments,
+      records: mockRecords,
+      followUps: mockFollowUps,
+      doctors: mockDoctors,
+      rooms: mockRooms,
+      equipment: mockEquipment,
 
-  addCustomer: (customer) => set((s) => ({ customers: [...s.customers, customer] })),
-  updateCustomer: (id, data) => set((s) => ({ customers: s.customers.map((c) => (c.id === id ? { ...c, ...data } : c)) })),
+      addCustomer: (customer) => set((s) => ({ customers: [...s.customers, customer] })),
+      updateCustomer: (id, data) => set((s) => ({ customers: s.customers.map((c) => (c.id === id ? { ...c, ...data } : c)) })),
 
-  addAssessment: (assessment) => set((s) => ({ assessments: [...s.assessments, assessment] })),
-  updateAssessment: (id, data) => set((s) => ({ assessments: s.assessments.map((a) => (a.id === id ? { ...a, ...data } : a)) })),
+      addAssessment: (assessment) => set((s) => ({ assessments: [...s.assessments, assessment] })),
+      updateAssessment: (id, data) => set((s) => ({ assessments: s.assessments.map((a) => (a.id === id ? { ...a, ...data } : a)) })),
 
-  addTreatmentPlan: (plan) => set((s) => ({ treatmentPlans: [...s.treatmentPlans, plan] })),
-  updateTreatmentPlan: (id, data) => set((s) => ({ treatmentPlans: s.treatmentPlans.map((p) => (p.id === id ? { ...p, ...data } : p)) })),
+      addTreatmentPlan: (plan) => set((s) => ({ treatmentPlans: [...s.treatmentPlans, plan] })),
+      updateTreatmentPlan: (id, data) => set((s) => ({ treatmentPlans: s.treatmentPlans.map((p) => (p.id === id ? { ...p, ...data } : p)) })),
 
-  addAppointment: (appointment) => set((s) => ({ appointments: [...s.appointments, appointment] })),
-  updateAppointment: (id, data) => set((s) => ({ appointments: s.appointments.map((a) => (a.id === id ? { ...a, ...data } : a)) })),
+      addAppointment: (appointment) => set((s) => ({ appointments: [...s.appointments, appointment] })),
+      updateAppointment: (id, data) => set((s) => ({ appointments: s.appointments.map((a) => (a.id === id ? { ...a, ...data } : a)) })),
 
-  addRecord: (record) => set((s) => ({ records: [...s.records, record] })),
-  updateRecord: (id, data) => set((s) => ({ records: s.records.map((r) => (r.id === id ? { ...r, ...data } : r)) })),
+      addRecord: (record) => set((s) => ({ records: [...s.records, record] })),
+      updateRecord: (id, data) => set((s) => ({ records: s.records.map((r) => (r.id === id ? { ...r, ...data } : r)) })),
 
-  addFollowUp: (task) => set((s) => ({ followUps: [...s.followUps, task] })),
-  updateFollowUp: (id, data) => set((s) => ({ followUps: s.followUps.map((f) => (f.id === id ? { ...f, ...data } : f)) })),
-}))
+      addFollowUp: (task) => set((s) => ({ followUps: [...s.followUps, task] })),
+      updateFollowUp: (id, data) => set((s) => ({ followUps: s.followUps.map((f) => (f.id === id ? { ...f, ...data } : f)) })),
+
+      resetAllData: () => set({
+        customers: mockCustomers,
+        assessments: mockAssessments,
+        treatmentPlans: mockTreatmentPlans,
+        appointments: mockAppointments,
+        records: mockRecords,
+        followUps: mockFollowUps,
+      }),
+    }),
+    {
+      name: 'skin-management-store',
+      storage: createJSONStorage(() => localStorage),
+      partialize: (state) => ({
+        customers: state.customers,
+        assessments: state.assessments,
+        treatmentPlans: state.treatmentPlans,
+        appointments: state.appointments,
+        records: state.records,
+        followUps: state.followUps,
+      }),
+    }
+  )
+)

@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import { format, addDays, startOfWeek, parseISO, isSameDay } from 'date-fns'
 import { zhCN } from 'date-fns/locale'
-import { Calendar, Plus, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Calendar, Plus, ChevronLeft, ChevronRight, Edit } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAppStore } from '@/store/useAppStore'
 import type { Appointment } from '@/types'
@@ -22,14 +22,34 @@ function getStatusClasses(status: Appointment['status']) {
     case 'completed':
       return 'bg-green-50 border-green-300 text-green-800'
     case 'no_show':
-      return 'bg-red-50 border-red-300 text-red-800'
+      return 'bg-red-50 border-red-200 text-red-800'
+    case 'late':
+      return 'bg-amber-50 border-amber-200 text-amber-800'
+    case 'rescheduled':
+      return 'bg-blue-50 border-blue-200 text-blue-800'
+    case 'cancelled':
+      return 'bg-gray-50 border-gray-200 text-gray-800'
     default:
       return 'bg-primary-50 border-primary-300 text-primary-800'
   }
 }
 
+function getStatusLabel(status: Appointment['status']) {
+  switch (status) {
+    case 'scheduled': return '已预约'
+    case 'checked_in': return '已签到'
+    case 'in_progress': return '进行中'
+    case 'completed': return '已完成'
+    case 'no_show': return '漏约'
+    case 'late': return '迟到'
+    case 'rescheduled': return '改约'
+    case 'cancelled': return '取消'
+    default: return status
+  }
+}
+
 export default function Schedule() {
-  const { appointments, customers, doctors, rooms, equipment, addAppointment } = useAppStore()
+  const { appointments, customers, doctors, rooms, equipment, treatmentPlans, addAppointment, updateAppointment, updateTreatmentPlan } = useAppStore()
 
   const [viewMode, setViewMode] = useState<ViewMode>('week')
   const [currentDate, setCurrentDate] = useState(new Date())
@@ -37,6 +57,9 @@ export default function Schedule() {
   const [filterEquipment, setFilterEquipment] = useState('')
   const [filterRoom, setFilterRoom] = useState('')
   const [showModal, setShowModal] = useState(false)
+  const [showStatusModal, setShowStatusModal] = useState<Appointment | null>(null)
+  const [selectedStatus, setSelectedStatus] = useState<'late' | 'no_show' | 'rescheduled' | 'cancelled' | null>(null)
+  const [changeReason, setChangeReason] = useState('')
 
   const [formCustomerId, setFormCustomerId] = useState('')
   const [formDoctorId, setFormDoctorId] = useState('')
@@ -113,20 +136,63 @@ export default function Schedule() {
     resetForm()
   }
 
+  const handleOpenStatusModal = (appt: Appointment) => {
+    setShowStatusModal(appt)
+    setSelectedStatus(null)
+    setChangeReason('')
+  }
+
+  const handleConfirmStatusChange = () => {
+    if (!showStatusModal || !selectedStatus) return
+
+    updateAppointment(showStatusModal.id, {
+      status: selectedStatus,
+      changeReason: changeReason
+    })
+
+    if (selectedStatus === 'no_show' || selectedStatus === 'cancelled' || selectedStatus === 'rescheduled') {
+      const plan = treatmentPlans.find(p => p.customerId === showStatusModal.customerId)
+      if (plan) {
+        const updatedSessions = plan.sessions.map(s => 
+          s.sessionNumber === showStatusModal.sessionNumber 
+            ? { ...s, status: 'skipped' as const } 
+            : s
+        )
+        updateTreatmentPlan(plan.id, { sessions: updatedSessions })
+      }
+    }
+
+    setShowStatusModal(null)
+    setSelectedStatus(null)
+    setChangeReason('')
+  }
+
   const renderApptPill = (appt: Appointment, compact = false) => (
     <div
       key={appt.id}
       className={cn(
-        'px-2 py-1 rounded-md border text-[11px] leading-tight',
+        'px-2 py-1 rounded-md border text-[11px] leading-tight relative group',
         getStatusClasses(appt.status)
       )}
     >
-      <div className="font-medium truncate">{getCustomerName(appt.customerId)}</div>
+      <button
+        onClick={(e) => { e.stopPropagation(); handleOpenStatusModal(appt) }}
+        className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-black/10 transition-opacity"
+        title="状态变更"
+      >
+        <Edit className="w-3 h-3" />
+      </button>
+      <div className="font-medium truncate pr-4">{getCustomerName(appt.customerId)}</div>
       {!compact && (
         <>
           <div className="opacity-70 truncate">{getDoctorName(appt.doctorId)} · {getRoomName(appt.roomId)}</div>
           <div className="opacity-60">第{appt.sessionNumber}次</div>
         </>
+      )}
+      {appt.changeReason && (appt.status === 'late' || appt.status === 'no_show' || appt.status === 'rescheduled' || appt.status === 'cancelled') && (
+        <div className="mt-1 pt-1 border-t border-current/20 text-[10px] opacity-80">
+          状态变更: {getStatusLabel(appt.status)} 原因: {appt.changeReason}
+        </div>
       )}
     </div>
   )
@@ -433,6 +499,119 @@ export default function Schedule() {
                 className="px-4 py-2 text-sm text-white bg-primary-600 rounded-lg hover:bg-primary-700 transition-colors shadow-sm shadow-primary-200"
               >
                 确认预约
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showStatusModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={() => setShowStatusModal(null)}>
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6" onClick={(e) => e.stopPropagation()}>
+            <h2 className="font-serif-title text-lg font-semibold text-slate-800 mb-4">预约状态变更</h2>
+            
+            <div className="mb-4 p-3 bg-slate-50 rounded-lg space-y-1 text-sm">
+              <div className="flex justify-between">
+                <span className="text-slate-500">客户:</span>
+                <span className="font-medium">{getCustomerName(showStatusModal.customerId)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">医生:</span>
+                <span className="font-medium">{getDoctorName(showStatusModal.doctorId)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">房间:</span>
+                <span className="font-medium">{getRoomName(showStatusModal.roomId)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">日期时间:</span>
+                <span className="font-medium">{format(parseISO(showStatusModal.scheduledAt), 'yyyy-MM-dd HH:mm')}</span>
+              </div>
+            </div>
+
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-slate-600 mb-2">选择状态</label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => setSelectedStatus('late')}
+                  className={cn(
+                    'px-3 py-2 rounded-lg text-sm font-medium transition-all border',
+                    selectedStatus === 'late'
+                      ? 'bg-amber-50 border-amber-300 text-amber-700 ring-2 ring-amber-200'
+                      : 'bg-white border-slate-200 text-slate-600 hover:bg-amber-50 hover:border-amber-200'
+                  )}
+                >
+                  🕒 客户迟到
+                </button>
+                <button
+                  onClick={() => setSelectedStatus('rescheduled')}
+                  className={cn(
+                    'px-3 py-2 rounded-lg text-sm font-medium transition-all border',
+                    selectedStatus === 'rescheduled'
+                      ? 'bg-blue-50 border-blue-300 text-blue-700 ring-2 ring-blue-200'
+                      : 'bg-white border-slate-200 text-slate-600 hover:bg-blue-50 hover:border-blue-200'
+                  )}
+                >
+                  📅 改约
+                </button>
+                <button
+                  onClick={() => setSelectedStatus('no_show')}
+                  className={cn(
+                    'px-3 py-2 rounded-lg text-sm font-medium transition-all border',
+                    selectedStatus === 'no_show'
+                      ? 'bg-red-50 border-red-300 text-red-700 ring-2 ring-red-200'
+                      : 'bg-white border-slate-200 text-slate-600 hover:bg-red-50 hover:border-red-200'
+                  )}
+                >
+                  ❌ 客户漏约
+                </button>
+                <button
+                  onClick={() => setSelectedStatus('cancelled')}
+                  className={cn(
+                    'px-3 py-2 rounded-lg text-sm font-medium transition-all border',
+                    selectedStatus === 'cancelled'
+                      ? 'bg-gray-50 border-gray-300 text-gray-700 ring-2 ring-gray-200'
+                      : 'bg-white border-slate-200 text-slate-600 hover:bg-gray-50 hover:border-gray-200'
+                  )}
+                >
+                  ⏎ 取消预约
+                </button>
+              </div>
+            </div>
+
+            <div className="mb-6">
+              <label className="block text-sm font-medium text-slate-600 mb-1">变更原因</label>
+              <textarea
+                value={changeReason}
+                onChange={(e) => setChangeReason(e.target.value)}
+                placeholder="请输入原因..."
+                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-200 resize-none"
+                rows={3}
+              />
+            </div>
+
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  setShowStatusModal(null)
+                  setSelectedStatus(null)
+                  setChangeReason('')
+                }}
+                className="px-4 py-2 text-sm text-slate-600 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleConfirmStatusChange}
+                disabled={!selectedStatus}
+                className={cn(
+                  'px-4 py-2 text-sm text-white rounded-lg transition-colors shadow-sm',
+                  selectedStatus
+                    ? 'bg-primary-600 hover:bg-primary-700 shadow-primary-200'
+                    : 'bg-slate-300 cursor-not-allowed'
+                )}
+              >
+                确认变更
               </button>
             </div>
           </div>

@@ -56,7 +56,7 @@ export interface Appointment {
   equipmentId: string
   scheduledAt: string
   duration: number
-  status: 'scheduled' | 'checked_in' | 'in_progress' | 'completed' | 'no_show' | 'rescheduled' | 'cancelled'
+  status: 'scheduled' | 'checked_in' | 'in_progress' | 'completed' | 'no_show' | 'rescheduled' | 'cancelled' | 'late'
   changeReason?: string
   sessionNumber: number
 }
